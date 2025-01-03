@@ -20,7 +20,7 @@ from dinov2.utils.param_groups import get_params_groups_with_decay, fuse_params_
 from dinov2.fsdp import get_fsdp_wrapper, ShardedGradScaler, get_fsdp_modules, reshard_fsdp_model
 from dinov2.models.vision_transformer import BlockChunk
 
-from dino_text_encoder import DinoTextEncoder  # <-- (1) we import our custom text encoder
+from dinov2.models.dino_text_encoder import DinoTextEncoder  # <-- (1) we import our custom text encoder
 
 logger = logging.getLogger("dinov2")
 
