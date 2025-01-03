@@ -58,6 +58,11 @@ def _parse_dataset_str(dataset_str: str):
             kwargs["split"] = ImageNet.Split[kwargs["split"]]
     elif name == "ImageNet22k":
         class_ = ImageNet22k
+        
+    elif name == "Flickr8k":
+        from .datasets import Flickr8k
+        class_ = Flickr8k
+    
     else:
         raise ValueError(f'Unsupported dataset "{name}"')
 
