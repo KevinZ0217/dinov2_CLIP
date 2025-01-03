@@ -172,7 +172,83 @@ def do_train(cfg, model, resume=False, max_to_keep=3, save_frequency=3):
         mask_generator=mask_generator,
         dtype=inputs_dtype,
     )
+    
+    def flickr_collate_text(text_list, tokenizer=None):
+        """
+        text_list: List[str] of captions
+        tokenizer: e.g. a function or object that maps string -> list or tensor of token IDs
+        returns: e.g. {"text_tokens": Tensor or list of tokens}
+        """
+    
+        if tokenizer is None:
+            # trivial, do nothing, keep them as strings
+            return {"text_tokens": text_list}
+    
+        # else apply your actual tokenization
+        tokenized = [tokenizer(txt) for txt in text_list]
+        # If your tokenizer returns tensors of variable length, you might need to pad, 
+        # e.g. with torch.nn.utils.rnn.pad_sequence(...).
+        # We'll just store them as a list here:
+        return {"text_tokens": tokenized}
 
+    def combined_collate_flickr_dino(
+        batch, 
+        image_collate_fn, 
+        text_collate_fn
+    ):
+        """
+        batch: List of (image, caption_str) pairs
+        image_collate_fn: a partial(...) of collate_data_and_cast (or similar) that 
+                          processes images and returns a dict
+        text_collate_fn:  a function that processes the text list and returns a dict
+        """
+    
+        # 1) Separate the images and the text
+        images = [sample[0] for sample in batch]   # all images
+        texts  = [sample[1] for sample in batch]   # all captions
+    
+        # 2) Collate images with the original DINO function 
+        #    (which might produce collated_global_crops, local_crops, masks, etc.)
+        images_dict = image_collate_fn(images)
+          # e.g. returns {"collated_global_crops": Tensor, "collated_masks": Tensor, ...}
+    
+        # 3) Collate text with the flickr approach
+        text_dict = text_collate_fn(texts)
+          # e.g. returns {"text_tokens": ...}
+    
+        # 4) Merge results
+        combined_dict = {}
+        combined_dict.update(images_dict)
+        combined_dict.update(text_dict)
+    
+        return combined_dict
+
+    # 1) Partially define the image-collate with your standard arguments
+    image_collate = partial(
+        collate_data_and_cast,
+        mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
+        mask_probability=cfg.ibot.mask_sample_probability,
+        n_tokens=n_tokens,
+        mask_generator=mask_generator,
+        dtype=inputs_dtype,
+    )
+    
+    # 2) define the text-collate (optionally pass a tokenizer)
+    text_collate = partial(
+        flickr_collate_text,
+        tokenizer=my_flickr_tokenizer,  # or None
+    )
+    
+    # 3) define the final combined collate
+    my_combined_collate = partial(
+        combined_collate_flickr_dino,
+        image_collate_fn=image_collate,
+        text_collate_fn=text_collate,
+    )
+    
+
+
+    
     # Build dataset that yields (image, text) pairs
     dataset = make_dataset(
         dataset_str=cfg.train.dataset_path,  # must produce (image, text)
@@ -190,7 +266,8 @@ def do_train(cfg, model, resume=False, max_to_keep=3, save_frequency=3):
         sampler_type=sampler_type,
         sampler_advance=0,
         drop_last=True,
-        collate_fn=collate_fn,
+        # collate_fn=collate_fn,
+        collate_fn = my_combined_collate
     )
 
     iteration = start_iter
